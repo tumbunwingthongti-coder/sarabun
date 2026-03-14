@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ระบบสารบรรณอิเล็กทรอนิกส์ (Firebase)</title>
+  <title>ระบบสารบรรณอิเล็กทรอนิกส์</title>
   
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -17,17 +17,17 @@
     .custom-scrollbar::-webkit-scrollbar-thumb { background-color: #cbd5e1; border-radius: 20px; }
   </style>
 
-  <!-- Phosphor Icons (แทนที่ Lucide เพื่อให้ใช้งานบน HTML ได้ง่ายขึ้น) -->
+  <!-- Phosphor Icons -->
   <script src="https://unpkg.com/@phosphor-icons/web"></script>
 
   <!-- React & ReactDOM -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
   
-  <!-- Babel สำหรับแปลง JSX -->
+  <!-- Babel -->
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-  <!-- Firebase SDK (Compat Version สำหรับ HTML ไฟล์เดียว) -->
+  <!-- Firebase SDK -->
   <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-app-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore-compat.js"></script>
   <script src="https://www.gstatic.com/firebasejs/11.6.1/firebase-auth-compat.js"></script>
@@ -60,12 +60,35 @@
     // --- Master Data ---
     const DISTRICT_NAME = "ตำบลคลองพระยา";
 
-    // ข้อมูลจำลองเริ่มต้น (ใช้ในกรณีที่ฐานข้อมูลยังว่างเปล่า)
+    // ข้อมูลจำลองเริ่มต้น (ใช้กรณีดึงข้อมูลจาก Firebase ไม่ได้ หรือไม่มีสิทธิ์)
     const fallbackUsers = [
       { id: 'u_staff', username: 'admin', password: '123', role: 'admin', temple: 'สำนักงานส่วนกลาง', name: 'เจ้าหน้าที่ สารบรรณ', position: 'ผู้ดูแลระบบส่วนกลาง' },
       { id: 'u1', username: 'jaokana', password: '123', role: 'temple', temple: 'สำนักงานเจ้าคณะตำบล', name: 'พระครูสิริฯ', position: 'เจ้าคณะตำบล' },
       { id: 'u2', username: 'wat1', password: '123', role: 'temple', temple: 'วัดหนองชะอม', name: 'พระมหา ก.', position: 'เลขานุการวัด' },
       { id: 'u3', username: 'wat2', password: '123', role: 'temple', temple: 'วัดป่าเลไลยก์', name: 'พระอธิการ ข.', position: 'เจ้าอาวาส' }
+    ];
+
+    const fallbackDocuments = [
+      {
+        id: '1', docPrefix: 'จต.', docNumber: 'จต.2569-00001', originalDocNumber: 'พศ 0001/123',
+        title: 'ขอเชิญประชุมพระสังฆาธิการระดับตำบล', sender: 'สำนักงานเจ้าคณะตำบล', receivers: ['ทุกวัดในเขตตำบล'],
+        date: '2026-03-10', status: 'completed', attachment: 'invitation.pdf', note: 'ประชุมวันที่ 20 มีนาคม เวลา 13.00 น. ณ วัดหนองชะอม'
+      },
+      {
+        id: '2', docPrefix: 'ทป.จต.', docNumber: 'ทป.จต.2569-00001', originalDocNumber: '-',
+        title: 'รายงานผลการสอบธรรมสนามหลวงของสำนักเรียน', sender: 'วัดหนองชะอม', receivers: ['สำนักงานส่วนกลาง'],
+        date: '2026-03-12', status: 'pending', attachment: 'report2569.pdf', note: 'จัดส่งตามกำหนดการ'
+      },
+      {
+        id: '3', docPrefix: 'พิเศษ', docNumber: 'พิเศษ2569-00001', originalDocNumber: 'มส 14/2569',
+        title: 'มติมหาเถรสมาคม เรื่องการจัดกิจกรรมวันวิสาขบูชา', sender: 'สำนักงานส่วนกลาง', receivers: ['วัดป่าเลไลยก์', 'วัดท่าไม้'],
+        date: '2026-03-14', status: 'processing', attachment: 'announce.pdf', note: 'แจ้งเฉพาะวัดที่เข้าร่วมโครงการ'
+      }
+    ];
+
+    const fallbackNotifications = [
+      { id: 'n1', target: 'all', message: 'ประกาศ: ขอเชิญประชุมพระสังฆาธิการระดับตำบล', date: '2026-03-10', isRead: false },
+      { id: 'n2', target: 'วัดป่าเลไลยก์', message: 'มีหนังสือส่งถึงวัดท่าน: มติมหาเถรสมาคม...', date: '2026-03-14', isRead: false }
     ];
 
     // --- Barcode Component ---
@@ -105,10 +128,11 @@
 
     // --- Main Application Component ---
     function DocumentSystem() {
-      // States สำหรับเก็บข้อมูลจาก Firebase
-      const [users, setUsers] = useState([]);
-      const [documents, setDocuments] = useState([]);
-      const [notifications, setNotifications] = useState([]);
+      // States
+      const [users, setUsers] = useState(fallbackUsers);
+      const [documents, setDocuments] = useState(fallbackDocuments);
+      const [notifications, setNotifications] = useState(fallbackNotifications);
+      const [firebaseError, setFirebaseError] = useState(null); // เก็บสถานะ Error ของ Firebase
       
       const [currentUser, setCurrentUser] = useState(null);
       const [activeTab, setActiveTab] = useState('dashboard');
@@ -132,41 +156,72 @@
 
       // --- Firebase Data Fetching ---
       useEffect(() => {
-        // ลงชื่อเข้าใช้แบบ Anonymous เพื่อสิทธิ์อ่าน/เขียนฐานข้อมูล
-        auth.signInAnonymously().catch(err => console.error("Auth Error:", err));
+        let unsubDocs, unsubUsers, unsubNotifs;
 
-        const unsubDocs = db.collection("documents").onSnapshot(snapshot => {
-          const docsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          // เรียงตามวันที่ล่าสุด
-          docsData.sort((a, b) => new Date(b.date) - new Date(a.date));
-          setDocuments(docsData);
-        });
+        const initFirebase = async () => {
+          try {
+            // รอให้ SignIn สำเร็จก่อน
+            await auth.signInAnonymously();
 
-        const unsubUsers = db.collection("users").onSnapshot(snapshot => {
-          const usersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          setUsers(usersData);
-          setIsLoading(false);
-        });
+            // ดึง Documents
+            unsubDocs = db.collection("documents").onSnapshot(
+              snapshot => {
+                const docsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                docsData.sort((a, b) => new Date(b.date) - new Date(a.date));
+                setDocuments(docsData.length > 0 ? docsData : fallbackDocuments); // ถ้าว่างให้ใช้ mock
+                setFirebaseError(null); // รีเซ็ต error
+              },
+              error => {
+                console.error("Documents Snapshot Error:", error);
+                setFirebaseError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้ (Permission Denied) กำลังใช้ข้อมูลจำลองแทน");
+              }
+            );
 
-        const unsubNotifs = db.collection("notifications").onSnapshot(snapshot => {
-          const notifsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          notifsData.sort((a, b) => new Date(b.date) - new Date(a.date));
-          setNotifications(notifsData);
-        });
+            // ดึง Users
+            unsubUsers = db.collection("users").onSnapshot(
+              snapshot => {
+                const usersData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                setUsers(usersData.length > 0 ? usersData : fallbackUsers);
+                setIsLoading(false);
+              },
+              error => {
+                console.error("Users Snapshot Error:", error);
+                setIsLoading(false);
+              }
+            );
+
+            // ดึง Notifications
+            unsubNotifs = db.collection("notifications").onSnapshot(
+              snapshot => {
+                const notifsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+                notifsData.sort((a, b) => new Date(b.date) - new Date(a.date));
+                setNotifications(notifsData.length > 0 ? notifsData : fallbackNotifications);
+              },
+              error => {
+                console.error("Notifications Snapshot Error:", error);
+              }
+            );
+
+          } catch (err) {
+            console.error("Firebase Init Error:", err);
+            setFirebaseError("เกิดข้อผิดพลาดในการเชื่อมต่อ Firebase");
+            setIsLoading(false);
+          }
+        };
+
+        initFirebase();
 
         return () => {
-          unsubDocs();
-          unsubUsers();
-          unsubNotifs();
+          if (unsubDocs) unsubDocs();
+          if (unsubUsers) unsubUsers();
+          if (unsubNotifs) unsubNotifs();
         };
       }, []);
 
       // Role Logic
       const isAdmin = currentUser && currentUser.role === 'admin';
       
-      // ใช้ข้อมูล users จาก Firebase หากไม่มีให้ใช้ fallbackUsers แทนชั่วคราว
-      const activeUsers = users.length > 0 ? users : fallbackUsers;
-      const TEMPLES = useMemo(() => activeUsers.filter(u => u.role === 'temple').map(u => u.temple), [activeUsers]);
+      const TEMPLES = useMemo(() => users.filter(u => u.role === 'temple').map(u => u.temple), [users]);
 
       // Notifications
       const myNotifications = useMemo(() => {
@@ -179,11 +234,18 @@
       const unreadCount = myNotifications.filter(n => !n.isRead).length;
 
       const markAllAsRead = () => {
-        myNotifications.forEach(n => {
-          if (!n.isRead) {
-            db.collection("notifications").doc(n.id).update({ isRead: true });
-          }
-        });
+        if(firebaseError) {
+          // ถ้ามี Error แปลว่าใช้ Mock data, อัปเดตใน state แทน
+          setNotifications(notifications.map(n => 
+            (n.target === 'all' || n.target === currentUser.temple) ? { ...n, isRead: true } : n
+          ));
+        } else {
+          myNotifications.forEach(n => {
+            if (!n.isRead) {
+              db.collection("notifications").doc(n.id).update({ isRead: true }).catch(e => console.error(e));
+            }
+          });
+        }
         setShowNotifMenu(false);
       };
 
@@ -202,12 +264,18 @@
       };
 
       const handleUpdateStatus = async (id, newStatus) => {
+        if(firebaseError) {
+          setDocuments(documents.map(doc => doc.id === id ? { ...doc, status: newStatus } : doc));
+          setSelectedDoc(prev => ({ ...prev, status: newStatus }));
+          return;
+        }
+
         try {
           await db.collection("documents").doc(id).update({ status: newStatus });
           setSelectedDoc(prev => ({ ...prev, status: newStatus }));
         } catch (error) {
           console.error("Error updating status:", error);
-          alert("ไม่สามารถอัปเดตสถานะได้ กรุณาตรวจสอบสิทธิ์ Firebase Rules");
+          alert("ไม่สามารถอัปเดตสถานะได้ (กรุณาตั้งค่า Firestore Rules)");
         }
       };
 
@@ -236,14 +304,33 @@
           status: formData.get('status'),
           attachment: attachmentName,
           note: formData.get('note'),
-          timestamp: firebase.firestore.FieldValue.serverTimestamp()
         };
+
+        if(firebaseError) {
+           // กรณีเชื่อม DB ไม่ได้ ให้เซฟลง State แบบจำลองไปก่อน
+           const newId = Date.now().toString();
+           setDocuments([{ id: newId, ...newDoc }, ...documents]);
+           
+           const newNotifs = receivers.map((r, i) => ({
+            id: `notif-${Date.now()}-${i}`,
+            target: r === 'ทุกวัดในเขตตำบล' ? 'all' : r,
+            message: `มีหนังสือใหม่: ${newDoc.title} (จาก ${newDoc.sender})`,
+            date: new Date().toISOString().split('T')[0],
+            isRead: false
+          }));
+          setNotifications([...newNotifs, ...notifications]);
+
+           setShowForm(false);
+           setActiveTab('outgoing');
+           return;
+        }
         
         try {
-          // 1. บันทึกเอกสารลง Firebase
-          await db.collection("documents").add(newDoc);
+          await db.collection("documents").add({
+            ...newDoc,
+            timestamp: firebase.firestore.FieldValue.serverTimestamp()
+          });
           
-          // 2. สร้างการแจ้งเตือนลง Firebase
           receivers.forEach(async (r) => {
             await db.collection("notifications").add({
               target: r === 'ทุกวัดในเขตตำบล' ? 'all' : r,
@@ -258,7 +345,7 @@
           setActiveTab('outgoing');
         } catch (error) {
           console.error("Error saving doc:", error);
-          alert("เกิดข้อผิดพลาดในการบันทึกข้อมูลลงฐานข้อมูล");
+          alert("เกิดข้อผิดพลาดในการบันทึกข้อมูลลงฐานข้อมูล กรุณาตรวจสอบ Firestore Rules");
         }
       };
 
@@ -274,6 +361,17 @@
           position: formData.get('position')
         };
         
+        if(firebaseError) {
+          if (editingUser) {
+            setUsers(users.map(u => u.id === editingUser.id ? { ...u, ...userData } : u));
+          } else {
+            setUsers([...users, { id: 'u' + Date.now(), ...userData }]);
+          }
+          setShowUserModal(false);
+          setEditingUser(null);
+          return;
+        }
+
         try {
           if (editingUser) {
             await db.collection("users").doc(editingUser.id).update(userData);
@@ -284,7 +382,7 @@
           setEditingUser(null);
         } catch (error) {
           console.error("Error saving user:", error);
-          alert("เกิดข้อผิดพลาดในการบันทึกบัญชี");
+          alert("เกิดข้อผิดพลาดในการบันทึกบัญชี กรุณาตรวจสอบ Firestore Rules");
         }
       };
       
@@ -300,14 +398,27 @@
 
       const deleteUser = async (id) => {
         if(window.confirm('ยืนยันการลบบัญชีผู้ใช้นี้? วัดนี้จะไม่สามารถเข้าสู่ระบบได้อีก')) {
-          await db.collection("users").doc(id).delete();
+          if(firebaseError){
+             setUsers(users.filter(u => u.id !== id));
+             return;
+          }
+          try{
+             await db.collection("users").doc(id).delete();
+          } catch(e) { alert("ไม่สามารถลบได้ ติด Permission Error"); }
         }
       };
 
       const deleteDocument = async (id) => {
         if(window.confirm('คุณต้องการลบหนังสือฉบับนี้ใช่หรือไม่? (การกระทำนี้ลบออกจากระบบกลาง)')) {
-          await db.collection("documents").doc(id).delete();
-          setSelectedDoc(null);
+          if(firebaseError){
+             setDocuments(documents.filter(d => d.id !== id));
+             setSelectedDoc(null);
+             return;
+          }
+          try{
+             await db.collection("documents").doc(id).delete();
+             setSelectedDoc(null);
+          } catch(e) { alert("ไม่สามารถลบได้ ติด Permission Error"); }
         }
       };
 
@@ -367,21 +478,43 @@
       const handleSaveImport = async () => {
         if (parsedImport.length === 0) return;
         
+        if(firebaseError){
+           // จำลองการเซฟลง state
+           let currentDocs = [...documents];
+           parsedImport.forEach((item, index) => {
+             const thaiYear = new Date().getFullYear() + 543;
+             const typeDocs = currentDocs.filter(d => d.docNumber && d.docNumber.startsWith(`${importPrefix}${thaiYear}-`));
+             const nextNumber = typeDocs.length + 1;
+             const sysDocNum = `${importPrefix}${thaiYear}-${nextNumber.toString().padStart(5, '0')}`;
+             const newDoc = {
+               id: Date.now().toString() + '-' + index,
+               docPrefix: importPrefix, docNumber: sysDocNum, originalDocNumber: item.originalDocNumber,
+               title: item.title, sender: currentUser.temple, receivers: [item.receiver],
+               date: item.date, status: item.status, attachment: item.attachment, note: item.note
+             };
+             currentDocs = [newDoc, ...currentDocs];
+          });
+          setDocuments(currentDocs);
+          setShowImportModal(false);
+          setImportData('');
+          setParsedImport([]);
+          setActiveTab('outgoing');
+          return;
+        }
+
         try {
-          // อ่านข้อมูลปัจจุบันก่อนรันเลข
           const snapshot = await db.collection("documents").get();
           const currentDocsData = snapshot.docs.map(doc => doc.data());
           const thaiYear = new Date().getFullYear() + 543;
           let currentTypeDocsCount = currentDocsData.filter(d => d.docNumber && d.docNumber.startsWith(`${importPrefix}${thaiYear}-`)).length;
 
-          // สร้าง Batch สำหรับบันทึกหลายรายการ
           const batch = db.batch();
 
           parsedImport.forEach((item) => {
              currentTypeDocsCount++;
              const sysDocNum = `${importPrefix}${thaiYear}-${currentTypeDocsCount.toString().padStart(5, '0')}`;
              
-             const docRef = db.collection("documents").doc(); // สร้าง ID ใหม่
+             const docRef = db.collection("documents").doc(); 
              batch.set(docRef, {
                docPrefix: importPrefix,
                docNumber: sysDocNum,
@@ -406,7 +539,7 @@
 
         } catch (error) {
           console.error("Error importing:", error);
-          alert("เกิดข้อผิดพลาดในการนำเข้าข้อมูล");
+          alert("เกิดข้อผิดพลาดในการนำเข้าข้อมูล ติด Permission Error");
         }
       };
 
@@ -414,7 +547,7 @@
         return <div className="flex h-screen items-center justify-center bg-slate-50 text-slate-500 font-bold"><i className="ph ph-spinner animate-spin text-3xl mr-3"></i> กำลังโหลดระบบ...</div>;
       }
 
-      if (!currentUser) return <LoginScreen onLogin={setCurrentUser} users={activeUsers} />;
+      if (!currentUser) return <LoginScreen onLogin={setCurrentUser} users={users} firebaseError={firebaseError} />;
 
       return (
         <div className="flex h-screen bg-slate-50 font-sarabun text-slate-800">
@@ -486,6 +619,11 @@
                   <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-2"></div>
                   {currentUser.temple}
                 </span>
+                {firebaseError && (
+                  <span className="ml-3 px-2 py-1 bg-amber-100 text-amber-800 text-[10px] rounded border border-amber-200 font-bold hidden lg:inline-block">
+                    ⚠️ โหมดข้อมูลจำลอง (ออฟไลน์)
+                  </span>
+                )}
               </div>
               
               <div className="flex items-center space-x-5">
@@ -577,7 +715,7 @@
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
                     <div>
                       <h3 className="text-lg font-bold text-slate-800">จัดการบัญชีผู้ใช้งานในระบบ</h3>
-                      <p className="text-sm text-slate-500 mt-1">ตั้งค่าและแก้ไขบัญชีสำหรับหน่วยงานและวัด (Firebase Database)</p>
+                      <p className="text-sm text-slate-500 mt-1">ตั้งค่าและแก้ไขบัญชีสำหรับหน่วยงานและวัด</p>
                     </div>
                     <button 
                       onClick={() => { setEditingUser(null); setShowUserModal(true); }}
@@ -600,7 +738,7 @@
                           </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-slate-100">
-                          {activeUsers.map(u => (
+                          {users.map(u => (
                             <tr key={u.id} className="hover:bg-slate-50/80 transition-colors">
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-slate-800">{u.username}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-700 font-medium">{u.temple}</td>
@@ -1090,7 +1228,7 @@
     );
 
     // --- Login Screen ---
-    const LoginScreen = ({ onLogin, users }) => {
+    const LoginScreen = ({ onLogin, users, firebaseError }) => {
       const [username, setUsername] = useState('');
       const [password, setPassword] = useState('');
       const [error, setError] = useState('');
@@ -1114,6 +1252,7 @@
               <p className="text-blue-600 font-bold text-sm mt-1">{DISTRICT_NAME}</p>
             </div>
             
+            {firebaseError && <div className="bg-amber-50 text-amber-700 p-3 rounded-xl text-xs mb-4 text-center border border-amber-200 font-medium">{firebaseError}</div>}
             {error && <div className="bg-red-50 text-red-600 p-3.5 rounded-xl text-sm mb-6 text-center border border-red-100 font-bold shadow-sm">{error}</div>}
             
             <form onSubmit={handleLogin} className="space-y-5">
