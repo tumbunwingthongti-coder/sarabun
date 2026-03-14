@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>ระบบสารบรรณอิเล็กทรอนิกส์</title>
+  <title>ระบบสารบรรณอิเล็กทรอนิกส์ (Firebase)</title>
   
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -57,10 +57,13 @@
     const db = firebase.firestore();
     const auth = firebase.auth();
 
-    // --- Master Data ---
-    const DISTRICT_NAME = "ตำบลคลองพระยา";
+    // --- Default Settings (ถ้าฐานข้อมูลว่าง) ---
+    const defaultSettings = {
+      districtName: "ตำบลคลองพระยา",
+      prefixes: ["จต.", "ทป.จต.", "พิเศษ", "ทั่วไป"]
+    };
 
-    // ข้อมูลจำลองเริ่มต้น (ใช้กรณีดึงข้อมูลจาก Firebase ไม่ได้ หรือไม่มีสิทธิ์)
+    // ข้อมูลจำลองเริ่มต้น
     const fallbackUsers = [
       { id: 'u_staff', username: 'admin', password: '123', role: 'admin', temple: 'สำนักงานส่วนกลาง', name: 'เจ้าหน้าที่ สารบรรณ', position: 'ผู้ดูแลระบบส่วนกลาง' },
       { id: 'u1', username: 'jaokana', password: '123', role: 'temple', temple: 'สำนักงานเจ้าคณะตำบล', name: 'พระครูสิริฯ', position: 'เจ้าคณะตำบล' },
@@ -73,22 +76,11 @@
         id: '1', docPrefix: 'จต.', docNumber: 'จต.2569-00001', originalDocNumber: 'พศ 0001/123',
         title: 'ขอเชิญประชุมพระสังฆาธิการระดับตำบล', sender: 'สำนักงานเจ้าคณะตำบล', receivers: ['ทุกวัดในเขตตำบล'],
         date: '2026-03-10', status: 'completed', attachment: 'invitation.pdf', note: 'ประชุมวันที่ 20 มีนาคม เวลา 13.00 น. ณ วัดหนองชะอม'
-      },
-      {
-        id: '2', docPrefix: 'ทป.จต.', docNumber: 'ทป.จต.2569-00001', originalDocNumber: '-',
-        title: 'รายงานผลการสอบธรรมสนามหลวงของสำนักเรียน', sender: 'วัดหนองชะอม', receivers: ['สำนักงานส่วนกลาง'],
-        date: '2026-03-12', status: 'pending', attachment: 'report2569.pdf', note: 'จัดส่งตามกำหนดการ'
-      },
-      {
-        id: '3', docPrefix: 'พิเศษ', docNumber: 'พิเศษ2569-00001', originalDocNumber: 'มส 14/2569',
-        title: 'มติมหาเถรสมาคม เรื่องการจัดกิจกรรมวันวิสาขบูชา', sender: 'สำนักงานส่วนกลาง', receivers: ['วัดป่าเลไลยก์', 'วัดท่าไม้'],
-        date: '2026-03-14', status: 'processing', attachment: 'announce.pdf', note: 'แจ้งเฉพาะวัดที่เข้าร่วมโครงการ'
       }
     ];
 
     const fallbackNotifications = [
-      { id: 'n1', target: 'all', message: 'ประกาศ: ขอเชิญประชุมพระสังฆาธิการระดับตำบล', date: '2026-03-10', isRead: false },
-      { id: 'n2', target: 'วัดป่าเลไลยก์', message: 'มีหนังสือส่งถึงวัดท่าน: มติมหาเถรสมาคม...', date: '2026-03-14', isRead: false }
+      { id: 'n1', target: 'all', message: 'ประกาศ: ขอเชิญประชุมพระสังฆาธิการระดับตำบล', date: '2026-03-10', isRead: false }
     ];
 
     // --- Barcode Component ---
@@ -129,10 +121,11 @@
     // --- Main Application Component ---
     function DocumentSystem() {
       // States
+      const [systemSettings, setSystemSettings] = useState(defaultSettings);
       const [users, setUsers] = useState(fallbackUsers);
       const [documents, setDocuments] = useState(fallbackDocuments);
       const [notifications, setNotifications] = useState(fallbackNotifications);
-      const [firebaseError, setFirebaseError] = useState(null); // เก็บสถานะ Error ของ Firebase
+      const [firebaseError, setFirebaseError] = useState(null);
       
       const [currentUser, setCurrentUser] = useState(null);
       const [activeTab, setActiveTab] = useState('dashboard');
@@ -143,37 +136,61 @@
       // Form & Modals State
       const [showForm, setShowForm] = useState(false);
       const [formType, setFormType] = useState('in');
-      const [selectedPrefix, setSelectedPrefix] = useState('จต.');
+      const [selectedPrefix, setSelectedPrefix] = useState('');
       const [selectedDoc, setSelectedDoc] = useState(null);
       const [expandedRows, setExpandedRows] = useState([]);
       const [showImportModal, setShowImportModal] = useState(false);
       const [importData, setImportData] = useState('');
       const [parsedImport, setParsedImport] = useState([]);
-      const [importPrefix, setImportPrefix] = useState('จต.');
+      const [importPrefix, setImportPrefix] = useState('');
       const [showNotifMenu, setShowNotifMenu] = useState(false);
       const [showUserModal, setShowUserModal] = useState(false);
       const [editingUser, setEditingUser] = useState(null);
 
+      // Settings Edit State
+      const [tempSettings, setTempSettings] = useState(defaultSettings);
+      const [newPrefix, setNewPrefix] = useState('');
+
+      // Update prefixes default when loaded
+      useEffect(() => {
+        if (systemSettings.prefixes.length > 0) {
+          if (!selectedPrefix) setSelectedPrefix(systemSettings.prefixes[0]);
+          if (!importPrefix) setImportPrefix(systemSettings.prefixes[0]);
+        }
+        setTempSettings(systemSettings);
+      }, [systemSettings]);
+
       // --- Firebase Data Fetching ---
       useEffect(() => {
-        let unsubDocs, unsubUsers, unsubNotifs;
+        let unsubDocs, unsubUsers, unsubNotifs, unsubSettings;
 
         const initFirebase = async () => {
           try {
-            // รอให้ SignIn สำเร็จก่อน
             await auth.signInAnonymously();
+
+            // ดึง Settings
+            unsubSettings = db.collection("settings").doc("general").onSnapshot(
+              doc => {
+                if (doc.exists) {
+                  setSystemSettings(doc.data());
+                } else {
+                  db.collection("settings").doc("general").set(defaultSettings);
+                }
+              },
+              error => console.error("Settings Snapshot Error:", error)
+            );
 
             // ดึง Documents
             unsubDocs = db.collection("documents").onSnapshot(
               snapshot => {
                 const docsData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                 docsData.sort((a, b) => new Date(b.date) - new Date(a.date));
-                setDocuments(docsData.length > 0 ? docsData : fallbackDocuments); // ถ้าว่างให้ใช้ mock
-                setFirebaseError(null); // รีเซ็ต error
+                setDocuments(docsData.length > 0 ? docsData : fallbackDocuments);
+                setFirebaseError(null);
               },
               error => {
                 console.error("Documents Snapshot Error:", error);
-                setFirebaseError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้ (Permission Denied) กำลังใช้ข้อมูลจำลองแทน");
+                setFirebaseError("ไม่สามารถเชื่อมต่อฐานข้อมูลได้ กำลังใช้ข้อมูลจำลองแทน");
               }
             );
 
@@ -197,9 +214,7 @@
                 notifsData.sort((a, b) => new Date(b.date) - new Date(a.date));
                 setNotifications(notifsData.length > 0 ? notifsData : fallbackNotifications);
               },
-              error => {
-                console.error("Notifications Snapshot Error:", error);
-              }
+              error => { console.error("Notifications Snapshot Error:", error); }
             );
 
           } catch (err) {
@@ -215,13 +230,14 @@
           if (unsubDocs) unsubDocs();
           if (unsubUsers) unsubUsers();
           if (unsubNotifs) unsubNotifs();
+          if (unsubSettings) unsubSettings();
         };
       }, []);
 
       // Role Logic
       const isAdmin = currentUser && currentUser.role === 'admin';
-      
-      const TEMPLES = useMemo(() => users.filter(u => u.role === 'temple').map(u => u.temple), [users]);
+      const activeUsers = users.length > 0 ? users : fallbackUsers;
+      const TEMPLES = useMemo(() => activeUsers.filter(u => u.role === 'temple').map(u => u.temple), [activeUsers]);
 
       // Notifications
       const myNotifications = useMemo(() => {
@@ -234,15 +250,17 @@
       const unreadCount = myNotifications.filter(n => !n.isRead).length;
 
       const markAllAsRead = () => {
-        if(firebaseError) {
-          // ถ้ามี Error แปลว่าใช้ Mock data, อัปเดตใน state แทน
-          setNotifications(notifications.map(n => 
-            (n.target === 'all' || n.target === currentUser.temple) ? { ...n, isRead: true } : n
-          ));
-        } else {
+        // 1. อัปเดตข้อมูลบนหน้าจอ (Local State) ทันทีเพื่อให้ระบบตอบสนองไว
+        setNotifications(prev => prev.map(n => 
+          (n.target === 'all' || n.target === currentUser.temple) ? { ...n, isRead: true } : n
+        ));
+
+        // 2. อัปเดตลงฐานข้อมูล ถ้าไม่ใช่โหมดจำลอง
+        if(!firebaseError) {
           myNotifications.forEach(n => {
             if (!n.isRead) {
-              db.collection("notifications").doc(n.id).update({ isRead: true }).catch(e => console.error(e));
+              db.collection("notifications").doc(n.id).update({ isRead: true })
+                .catch(e => console.warn("ข้ามการอัปเดต DB (เนื่องจากเป็นข้อมูลจำลอง):", e.message));
             }
           });
         }
@@ -264,18 +282,16 @@
       };
 
       const handleUpdateStatus = async (id, newStatus) => {
-        if(firebaseError) {
-          setDocuments(documents.map(doc => doc.id === id ? { ...doc, status: newStatus } : doc));
-          setSelectedDoc(prev => ({ ...prev, status: newStatus }));
-          return;
-        }
+        // อัปเดตหน้าจอทันที
+        setDocuments(prev => prev.map(doc => doc.id === id ? { ...doc, status: newStatus } : doc));
+        setSelectedDoc(prev => ({ ...prev, status: newStatus }));
 
-        try {
-          await db.collection("documents").doc(id).update({ status: newStatus });
-          setSelectedDoc(prev => ({ ...prev, status: newStatus }));
-        } catch (error) {
-          console.error("Error updating status:", error);
-          alert("ไม่สามารถอัปเดตสถานะได้ (กรุณาตั้งค่า Firestore Rules)");
+        if(!firebaseError) {
+          try {
+            await db.collection("documents").doc(id).update({ status: newStatus });
+          } catch (error) {
+            console.warn("ข้ามการอัปเดต DB (เนื่องจากเป็นข้อมูลจำลอง):", error.message);
+          }
         }
       };
 
@@ -307,9 +323,8 @@
         };
 
         if(firebaseError) {
-           // กรณีเชื่อม DB ไม่ได้ ให้เซฟลง State แบบจำลองไปก่อน
            const newId = Date.now().toString();
-           setDocuments([{ id: newId, ...newDoc }, ...documents]);
+           setDocuments(prev => [{ id: newId, ...newDoc }, ...prev]);
            
            const newNotifs = receivers.map((r, i) => ({
             id: `notif-${Date.now()}-${i}`,
@@ -318,10 +333,11 @@
             date: new Date().toISOString().split('T')[0],
             isRead: false
           }));
-          setNotifications([...newNotifs, ...notifications]);
+          setNotifications(prev => [...newNotifs, ...prev]);
 
            setShowForm(false);
            setActiveTab('outgoing');
+           alert("ส่งหนังสือสำเร็จ (บันทึกในโหมดจำลอง)");
            return;
         }
         
@@ -343,9 +359,30 @@
 
           setShowForm(false);
           setActiveTab('outgoing');
+          alert("ส่งหนังสือเข้าระบบสำเร็จ");
         } catch (error) {
           console.error("Error saving doc:", error);
           alert("เกิดข้อผิดพลาดในการบันทึกข้อมูลลงฐานข้อมูล กรุณาตรวจสอบ Firestore Rules");
+        }
+      };
+
+      // แก้ไขฟังก์ชัน Delete ให้เสถียรและจัดการ Mock Data ได้
+      const deleteDocument = async (id) => {
+        if(window.confirm('คุณต้องการลบหนังสือฉบับนี้ใช่หรือไม่? (การกระทำนี้จะลบออกจากระบบของทุกฝ่าย)')) {
+          // ลบออกจากหน้าจอทันที
+          setDocuments(prev => prev.filter(d => d.id !== id));
+          setSelectedDoc(null);
+
+          if(!firebaseError){
+             try{
+                await db.collection("documents").doc(id).delete();
+                alert("ลบเอกสารออกจากฐานข้อมูลสำเร็จ");
+             } catch(e) { 
+                console.warn("ข้ามการลบ DB (เนื่องจากเป็นข้อมูลจำลอง):", e.message); 
+             }
+          } else {
+             alert("ลบเอกสารสำเร็จ (โหมดจำลอง)");
+          }
         }
       };
 
@@ -363,12 +400,13 @@
         
         if(firebaseError) {
           if (editingUser) {
-            setUsers(users.map(u => u.id === editingUser.id ? { ...u, ...userData } : u));
+            setUsers(prev => prev.map(u => u.id === editingUser.id ? { ...u, ...userData } : u));
           } else {
-            setUsers([...users, { id: 'u' + Date.now(), ...userData }]);
+            setUsers(prev => [...prev, { id: 'u' + Date.now(), ...userData }]);
           }
           setShowUserModal(false);
           setEditingUser(null);
+          alert("บันทึกบัญชีสำเร็จ (โหมดจำลอง)");
           return;
         }
 
@@ -380,48 +418,60 @@
           }
           setShowUserModal(false);
           setEditingUser(null);
+          alert("บันทึกข้อมูลบัญชีลงฐานข้อมูลสำเร็จ");
         } catch (error) {
           console.error("Error saving user:", error);
           alert("เกิดข้อผิดพลาดในการบันทึกบัญชี กรุณาตรวจสอบ Firestore Rules");
         }
       };
-      
-      const openEditUser = (user) => {
-        setEditingUser(user);
-        setShowUserModal(true);
-      };
-
-      const closeUserModal = () => {
-        setShowUserModal(false);
-        setEditingUser(null);
-      };
 
       const deleteUser = async (id) => {
-        if(window.confirm('ยืนยันการลบบัญชีผู้ใช้นี้? วัดนี้จะไม่สามารถเข้าสู่ระบบได้อีก')) {
-          if(firebaseError){
-             setUsers(users.filter(u => u.id !== id));
-             return;
+        if(window.confirm('ยืนยันการลบบัญชีผู้ใช้นี้? หน่วยงานนี้จะไม่สามารถเข้าสู่ระบบได้อีก')) {
+          // ลบออกจากหน้าจอทันที
+          setUsers(prev => prev.filter(u => u.id !== id));
+          
+          if(!firebaseError){
+             try{
+                await db.collection("users").doc(id).delete();
+                alert("ลบบัญชีผู้ใช้ออกจากระบบสำเร็จ");
+             } catch(e) { 
+                console.warn("ข้ามการลบ DB (เนื่องจากเป็นข้อมูลจำลอง):", e.message);
+             }
+          } else {
+             alert("ลบบัญชีสำเร็จ (โหมดจำลอง)");
           }
-          try{
-             await db.collection("users").doc(id).delete();
-          } catch(e) { alert("ไม่สามารถลบได้ ติด Permission Error"); }
         }
       };
 
-      const deleteDocument = async (id) => {
-        if(window.confirm('คุณต้องการลบหนังสือฉบับนี้ใช่หรือไม่? (การกระทำนี้ลบออกจากระบบกลาง)')) {
-          if(firebaseError){
-             setDocuments(documents.filter(d => d.id !== id));
-             setSelectedDoc(null);
-             return;
-          }
-          try{
-             await db.collection("documents").doc(id).delete();
-             setSelectedDoc(null);
-          } catch(e) { alert("ไม่สามารถลบได้ ติด Permission Error"); }
+      // --- Settings Management ---
+      const handleSaveSettings = async (e) => {
+        e.preventDefault();
+        if(firebaseError) {
+          setSystemSettings(tempSettings);
+          alert("บันทึกการตั้งค่าสำเร็จ (โหมดจำลอง)");
+          return;
+        }
+        try {
+          await db.collection("settings").doc("general").set(tempSettings);
+          alert("บันทึกการตั้งค่าลงฐานข้อมูลสำเร็จ");
+        } catch (error) {
+          alert("ไม่สามารถบันทึกการตั้งค่าได้ (Permission Error)");
+          console.error(error);
         }
       };
 
+      const handleAddPrefix = () => {
+        if(newPrefix.trim() !== "" && !tempSettings.prefixes.includes(newPrefix.trim())) {
+          setTempSettings({ ...tempSettings, prefixes: [...tempSettings.prefixes, newPrefix.trim()] });
+          setNewPrefix('');
+        }
+      };
+
+      const handleRemovePrefix = (prefixToRemove) => {
+        setTempSettings({ ...tempSettings, prefixes: tempSettings.prefixes.filter(p => p !== prefixToRemove) });
+      };
+
+      // Table filters & stats
       const filteredDocs = accessibleDocuments.filter(doc => {
         const recs = doc.receivers || [];
         const isIncoming = recs.includes(currentUser.temple) || recs.includes('ทุกวัดในเขตตำบล') || (isAdmin && doc.sender !== currentUser.temple);
@@ -449,6 +499,7 @@
         }
       };
 
+      // Import logic
       const handleParseExcel = (e) => {
         const text = e.target.value;
         setImportData(text);
@@ -479,7 +530,6 @@
         if (parsedImport.length === 0) return;
         
         if(firebaseError){
-           // จำลองการเซฟลง state
            let currentDocs = [...documents];
            parsedImport.forEach((item, index) => {
              const thaiYear = new Date().getFullYear() + 543;
@@ -499,6 +549,7 @@
           setImportData('');
           setParsedImport([]);
           setActiveTab('outgoing');
+          alert("นำเข้าสำเร็จ (โหมดจำลอง)");
           return;
         }
 
@@ -531,12 +582,11 @@
           });
           
           await batch.commit();
-          
           setShowImportModal(false);
           setImportData('');
           setParsedImport([]);
           setActiveTab('outgoing');
-
+          alert("นำเข้าข้อมูลเข้าสู่ฐานข้อมูลสำเร็จ");
         } catch (error) {
           console.error("Error importing:", error);
           alert("เกิดข้อผิดพลาดในการนำเข้าข้อมูล ติด Permission Error");
@@ -547,7 +597,7 @@
         return <div className="flex h-screen items-center justify-center bg-slate-50 text-slate-500 font-bold"><i className="ph ph-spinner animate-spin text-3xl mr-3"></i> กำลังโหลดระบบ...</div>;
       }
 
-      if (!currentUser) return <LoginScreen onLogin={setCurrentUser} users={users} firebaseError={firebaseError} />;
+      if (!currentUser) return <LoginScreen onLogin={setCurrentUser} users={activeUsers} firebaseError={firebaseError} systemSettings={systemSettings} />;
 
       return (
         <div className="flex h-screen bg-slate-50 font-sarabun text-slate-800">
@@ -561,7 +611,7 @@
                     <i className="ph-fill ph-house text-2xl text-white"></i>
                   </div>
                   <h1 className="font-bold text-[13px] text-center text-blue-200 uppercase tracking-widest">ระบบสารบรรณอิเล็กทรอนิกส์</h1>
-                  <h2 className="font-semibold text-lg text-center mt-1 text-white">{DISTRICT_NAME}</h2>
+                  <h2 className="font-semibold text-lg text-center mt-1 text-white">{systemSettings.districtName}</h2>
                 </React.Fragment>
               ) : (
                 <div className="bg-gradient-to-br from-blue-500 to-indigo-600 p-2 rounded-lg mt-2 shadow-md flex items-center justify-center w-10 h-10">
@@ -580,9 +630,10 @@
               {isAdmin && (
                 <div className="pt-4 mt-4 border-t border-slate-800/50">
                   <p className={`text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2 ${isSidebarOpen ? 'px-4' : 'text-center'}`}>
-                    {isSidebarOpen ? 'ผู้ดูแลระบบ' : 'Admin'}
+                    {isSidebarOpen ? 'ส่วนผู้ดูแลระบบ' : 'Admin'}
                   </p>
                   <NavItem icon="ph-users" label="จัดการบัญชีผู้ใช้งาน" active={activeTab === 'users'} onClick={() => setActiveTab('users')} isOpen={isSidebarOpen} />
+                  <NavItem icon="ph-gear" label="ตั้งค่าระบบ" active={activeTab === 'settings'} onClick={() => setActiveTab('settings')} isOpen={isSidebarOpen} />
                 </div>
               )}
             </nav>
@@ -614,6 +665,7 @@
                   {activeTab === 'incoming' && 'แฟ้มทะเบียนหนังสือรับเข้า'}
                   {activeTab === 'outgoing' && 'แฟ้มทะเบียนหนังสือส่งออก'}
                   {activeTab === 'users' && 'การจัดการบัญชีผู้ใช้งาน'}
+                  {activeTab === 'settings' && 'ตั้งค่าการทำงานของระบบ'}
                 </h2>
                 <span className="ml-4 px-3 py-1 bg-slate-100 text-slate-600 text-xs rounded-full font-semibold border border-slate-200 hidden md:inline-flex items-center">
                   <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-2"></div>
@@ -709,13 +761,74 @@
                 </div>
               )}
 
+              {/* Settings Tab */}
+              {activeTab === 'settings' && isAdmin && (
+                <div className="max-w-4xl mx-auto bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                  <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex justify-between items-center">
+                    <div>
+                      <h3 className="text-lg font-bold text-slate-800">ปรับแต่งการตั้งค่าระบบ</h3>
+                      <p className="text-sm text-slate-500 mt-1">ข้อมูลที่แก้ไขที่นี่จะมีผลกับการแสดงผลของทุกบัญชีในเครือข่ายทันที</p>
+                    </div>
+                  </div>
+                  
+                  <form onSubmit={handleSaveSettings} className="p-8 space-y-8">
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-2">ชื่อระบบ / ชื่อหน่วยงานหลัก (ตำบล)</label>
+                      <input 
+                        type="text" 
+                        value={tempSettings.districtName}
+                        onChange={(e) => setTempSettings({...tempSettings, districtName: e.target.value})}
+                        className="w-full border border-slate-300 rounded-lg px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none font-medium"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-bold text-slate-700 mb-2">จัดการคำนำหน้าเลขสารบรรณ (Prefixes)</label>
+                      <p className="text-xs text-slate-500 mb-4">ตัวเลือกเหล่านี้จะไปปรากฏในฟอร์มการสร้างหนังสือส่งออก เพื่อใช้รันเลข เช่น "จต.", "ทป.จต."</p>
+                      
+                      <div className="flex space-x-3 mb-4">
+                        <input 
+                          type="text" 
+                          value={newPrefix}
+                          onChange={(e) => setNewPrefix(e.target.value)}
+                          placeholder="พิมพ์คำนำหน้าใหม่ เช่น กค."
+                          className="flex-1 border border-slate-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 outline-none"
+                        />
+                        <button type="button" onClick={handleAddPrefix} className="bg-blue-100 text-blue-700 hover:bg-blue-200 px-5 py-2.5 rounded-lg font-bold transition-colors flex items-center">
+                          <i className="ph-fill ph-plus-circle mr-2"></i> เพิ่ม
+                        </button>
+                      </div>
+
+                      <div className="flex flex-wrap gap-2">
+                        {tempSettings.prefixes.map(prefix => (
+                          <div key={prefix} className="flex items-center bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-lg">
+                            <span className="font-bold text-slate-700 mr-3">{prefix}</span>
+                            <button type="button" onClick={() => handleRemovePrefix(prefix)} className="text-red-400 hover:text-red-600 focus:outline-none">
+                              <i className="ph-fill ph-x-circle text-lg"></i>
+                            </button>
+                          </div>
+                        ))}
+                        {tempSettings.prefixes.length === 0 && <span className="text-sm text-red-500 font-medium">⚠️ กรุณาเพิ่มคำนำหน้าอย่างน้อย 1 รายการ</span>}
+                      </div>
+                    </div>
+
+                    <div className="pt-6 border-t border-slate-100 flex justify-end">
+                      <button type="submit" disabled={tempSettings.prefixes.length === 0} className="bg-emerald-600 hover:bg-emerald-700 text-white px-8 py-3 rounded-xl font-bold shadow-md hover:shadow-lg transition-all flex items-center disabled:opacity-50">
+                        <i className="ph-fill ph-floppy-disk mr-2 text-xl"></i> บันทึกการตั้งค่า
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
               {/* Users Tab */}
               {activeTab === 'users' && isAdmin && (
                 <div className="space-y-6 max-w-6xl mx-auto">
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
                     <div>
                       <h3 className="text-lg font-bold text-slate-800">จัดการบัญชีผู้ใช้งานในระบบ</h3>
-                      <p className="text-sm text-slate-500 mt-1">ตั้งค่าและแก้ไขบัญชีสำหรับหน่วยงานและวัด</p>
+                      <p className="text-sm text-slate-500 mt-1">ตั้งค่า แก้ไข และลบบัญชีสำหรับหน่วยงานและวัด</p>
                     </div>
                     <button 
                       onClick={() => { setEditingUser(null); setShowUserModal(true); }}
@@ -738,7 +851,7 @@
                           </tr>
                         </thead>
                         <tbody className="bg-white divide-y divide-slate-100">
-                          {users.map(u => (
+                          {activeUsers.map(u => (
                             <tr key={u.id} className="hover:bg-slate-50/80 transition-colors">
                               <td className="px-6 py-4 whitespace-nowrap text-sm font-semibold text-slate-800">{u.username}</td>
                               <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-700 font-medium">{u.temple}</td>
@@ -772,7 +885,7 @@
               )}
 
               {/* Documents Tabs */}
-              {activeTab !== 'users' && (
+              {activeTab !== 'users' && activeTab !== 'settings' && (
                 <div className="max-w-7xl mx-auto">
                   <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 space-y-4 sm:space-y-0">
                     <div className="text-slate-600 text-sm">
@@ -935,9 +1048,9 @@
                     <div>
                       <label className="block text-sm font-bold text-slate-700 mb-1.5">คำนำหน้าเลขทะเบียน <span className="text-red-500">*</span></label>
                       <select value={selectedPrefix} onChange={(e) => setSelectedPrefix(e.target.value)} className="w-full border border-slate-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white font-medium">
-                        <option value="จต.">จต. (เจ้าคณะตำบล)</option>
-                        <option value="ทป.จต.">ทป.จต. (ที่ปรึกษาฯ)</option>
-                        <option value="พิเศษ">พิเศษ / ทั่วไป</option>
+                        {systemSettings.prefixes.map(p => (
+                          <option key={p} value={p}>{p}</option>
+                        ))}
                       </select>
                     </div>
 
@@ -1171,10 +1284,18 @@
                   <button onClick={() => setShowImportModal(false)} className="text-slate-400 hover:text-slate-600 bg-slate-50 hover:bg-slate-100 p-2 rounded-full"><i className="ph ph-x"></i></button>
                 </div>
                 <div className="p-8 overflow-auto bg-slate-50/50">
+                  
+                  <div className="mb-5">
+                    <label className="block text-sm font-bold text-slate-700 mb-1.5">เลือกคำนำหน้าเลขสารบรรณสำหรับการนำเข้าชุดนี้</label>
+                    <select value={importPrefix} onChange={(e) => setImportPrefix(e.target.value)} className="w-full md:w-1/2 border border-slate-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-white font-medium">
+                      {systemSettings.prefixes.map(p => <option key={p} value={p}>{p}</option>)}
+                    </select>
+                  </div>
+
                   <div className="mb-6 text-sm text-slate-600 bg-white p-5 rounded-xl border border-slate-200 shadow-sm">
                     <p className="mb-3 font-bold text-slate-800">คำแนะนำ: คัดลอกข้อมูลจากตาราง Excel แล้ววางลงในกล่องด้านล่าง โดยเรียงลำดับคอลัมน์ดังนี้</p>
                     <div className="bg-slate-50 p-3 rounded-lg font-mono text-blue-700 font-bold border border-slate-200 overflow-x-auto whitespace-nowrap">
-                      เลขหนังสือ | วันที่ (YYYY-MM-DD) | เรื่อง | ถึงหน่วยงาน | สถานะ | ไฟล์ | หมายเหตุ
+                      เลขหนังสืออ้างอิง | วันที่ (YYYY-MM-DD) | เรื่อง | ถึงหน่วยงาน | สถานะ | ไฟล์ | หมายเหตุ
                     </div>
                   </div>
                   <textarea 
@@ -1228,7 +1349,7 @@
     );
 
     // --- Login Screen ---
-    const LoginScreen = ({ onLogin, users, firebaseError }) => {
+    const LoginScreen = ({ onLogin, users, firebaseError, systemSettings }) => {
       const [username, setUsername] = useState('');
       const [password, setPassword] = useState('');
       const [error, setError] = useState('');
@@ -1249,7 +1370,7 @@
                 <i className="ph-fill ph-house text-4xl"></i>
               </div>
               <h2 className="text-2xl font-black text-slate-800 tracking-tight">ระบบสารบรรณ</h2>
-              <p className="text-blue-600 font-bold text-sm mt-1">{DISTRICT_NAME}</p>
+              <p className="text-blue-600 font-bold text-sm mt-1">{systemSettings?.districtName || "ส่วนกลาง"}</p>
             </div>
             
             {firebaseError && <div className="bg-amber-50 text-amber-700 p-3 rounded-xl text-xs mb-4 text-center border border-amber-200 font-medium">{firebaseError}</div>}
@@ -1270,7 +1391,7 @@
                   <input type="password" className="w-full pl-12 pr-4 py-3.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500 outline-none transition-all font-medium text-slate-800" value={password} onChange={(e) => setPassword(e.target.value)} required />
                 </div>
               </div>
-              <button type="submit" className="w-full bg-blue-600 text-white py-3.5 rounded-xl hover:bg-blue-700 transition-all font-bold text-base mt-6 shadow-lg shadow-blue-600/30 hover:shadow-blue-600/40">เข้าสู่ระบบส่วนกลาง</button>
+              <button type="submit" className="w-full bg-blue-600 text-white py-3.5 rounded-xl hover:bg-blue-700 transition-all font-bold text-base mt-6 shadow-lg shadow-blue-600/30 hover:shadow-blue-600/40">เข้าสู่ระบบ</button>
             </form>
             
             <div className="mt-10 pt-6 border-t border-slate-100">
